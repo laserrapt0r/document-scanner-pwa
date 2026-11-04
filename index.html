@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0e1116">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Scanner">
+  <meta name="description" content="Scan documents, crop, enhance and share them as PDF or image – fully offline on your device.">
+  <title>Scanner</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+<!-- ============================ Home: document list -->
+<section id="view-home" class="view active">
+  <header class="topbar">
+    <h1 class="app-title"><span data-icon="scan"></span>Scanner</h1>
+    <button class="icon-btn" id="btn-settings" data-i18n-aria="aria.settings"><span data-icon="settings"></span></button>
+  </header>
+  <main class="content">
+    <ul id="doc-list" class="doc-list"></ul>
+    <div id="home-empty" class="empty" hidden>
+      <div class="empty-icon"><span data-icon="file"></span></div>
+      <p><b data-i18n="home.emptyTitle"></b></p>
+      <p class="muted" data-i18n="home.emptyText"></p>
+      <p class="muted small" id="install-hint" data-i18n-html="home.installHint" hidden></p>
+    </div>
+  </main>
+  <footer class="bottombar">
+    <button class="btn secondary" id="home-import"><span data-icon="image"></span><span data-i18n="btn.import"></span></button>
+    <button class="btn primary grow" id="home-scan"><span data-icon="camera"></span><span data-i18n="btn.scan"></span></button>
+  </footer>
+</section>
+
+<!-- ============================ Document: page overview -->
+<section id="view-doc" class="view">
+  <header class="topbar">
+    <button class="icon-btn" id="doc-back" data-i18n-aria="aria.back"><span data-icon="chevronLeft"></span></button>
+    <button class="title-btn" id="doc-title" data-i18n-aria="aria.rename"><span id="doc-name"></span><span data-icon="edit"></span></button>
+    <button class="icon-btn" id="doc-menu" data-i18n-aria="aria.more"><span data-icon="more"></span></button>
+  </header>
+  <main class="content">
+    <p class="muted small sort-hint" id="sort-hint" data-i18n="doc.sortHint" hidden></p>
+    <div id="page-grid" class="page-grid"></div>
+  </main>
+  <footer class="bottombar tools">
+    <button class="tool" id="doc-cam"><span data-icon="camera"></span><small data-i18n="doc.addPage"></small></button>
+    <button class="tool" id="doc-import"><span data-icon="image"></span><small data-i18n="btn.import"></small></button>
+    <button class="tool" id="doc-sort"><span data-icon="sort"></span><small id="doc-sort-label"></small></button>
+    <button class="btn primary grow" id="doc-export"><span data-icon="share"></span><span data-i18n="btn.export"></span></button>
+  </footer>
+</section>
+
+<!-- ============================ Page editor -->
+<section id="view-editor" class="view editor">
+  <header class="topbar">
+    <button class="icon-btn" id="ed-back" data-i18n-aria="aria.back"><span data-icon="chevronLeft"></span></button>
+    <div class="pager">
+      <button class="icon-btn sm" id="ed-prev" data-i18n-aria="aria.prev"><span data-icon="chevronLeft"></span></button>
+      <span id="ed-pos">1 / 1</span>
+      <button class="icon-btn sm" id="ed-next" data-i18n-aria="aria.next"><span data-icon="chevronRight"></span></button>
+    </div>
+    <button class="icon-btn" id="ed-delete" data-i18n-aria="aria.deletePage"><span data-icon="trash"></span></button>
+  </header>
+  <div class="stage" id="ed-stage">
+    <canvas id="crop-canvas" hidden></canvas>
+    <canvas id="loupe" hidden></canvas>
+    <div class="spinner" id="ed-spinner" hidden></div>
+  </div>
+  <div class="panel" id="ed-panel">
+    <div class="panel-pane" data-pane="filter">
+      <div class="filter-row" id="filter-row"></div>
+      <button class="link-btn" id="filter-all" data-i18n="ed.filterAll"></button>
+    </div>
+    <div class="panel-pane" data-pane="adjust" hidden>
+      <label class="slider"><span data-i18n="adj.brightness"></span><input type="range" id="adj-brightness" min="-100" max="100" step="1" value="0"><output id="out-brightness">0</output></label>
+      <label class="slider" id="row-contrast"><span data-i18n="adj.contrast"></span><input type="range" id="adj-contrast" min="-100" max="100" step="1" value="0"><output id="out-contrast">0</output></label>
+      <div class="row">
+        <button class="btn ghost sm" id="adj-reset" data-i18n="adj.reset"></button>
+        <button class="btn ghost sm" id="adj-all" data-i18n="adj.all"></button>
+      </div>
+    </div>
+    <div class="panel-pane" data-pane="crop" hidden>
+      <div class="row">
+        <button class="btn ghost sm" id="crop-auto"><span data-icon="scan"></span><span data-i18n="crop.auto"></span></button>
+        <button class="btn ghost sm" id="crop-full"><span data-icon="maximize"></span><span data-i18n="crop.full"></span></button>
+      </div>
+      <div class="row">
+        <button class="btn secondary grow" id="crop-cancel" data-i18n="btn.cancel"></button>
+        <button class="btn primary grow" id="crop-apply"><span data-icon="check"></span><span data-i18n="crop.apply"></span></button>
+      </div>
+    </div>
+  </div>
+  <nav class="toolbar" id="ed-toolbar">
+    <button data-tool="crop"><span data-icon="crop"></span><small data-i18n="tool.crop"></small></button>
+    <button data-tool="rotl"><span data-icon="rotateCcw"></span><small data-i18n="tool.left"></small></button>
+    <button data-tool="rotr"><span data-icon="rotateCw"></span><small data-i18n="tool.right"></small></button>
+    <button data-tool="filter"><span data-icon="wand"></span><small data-i18n="tool.filter"></small></button>
+    <button data-tool="adjust"><span data-icon="sliders"></span><small data-i18n="tool.adjust"></small></button>
+    <button data-tool="export"><span data-icon="share"></span><small data-i18n="tool.export"></small></button>
+  </nav>
+</section>
+
+<!-- ============================ Camera -->
+<section id="view-camera" class="view camera">
+  <video id="cam-video" playsinline muted autoplay></video>
+  <div class="cam-error" id="cam-error" hidden>
+    <p id="cam-error-text"></p>
+    <button class="btn primary" id="cam-system"><span data-icon="camera"></span><span data-i18n="cam.useSystem"></span></button>
+  </div>
+  <div class="cam-top">
+    <button class="icon-btn round" id="cam-close" data-i18n-aria="aria.close"><span data-icon="x"></span></button>
+    <span class="cam-hint" data-i18n="cam.hint"></span>
+    <button class="icon-btn round" id="cam-torch" data-i18n-aria="aria.torch" hidden><span data-icon="flash"></span></button>
+  </div>
+  <div class="cam-bottom">
+    <button class="cam-thumb" id="cam-thumb" data-i18n-aria="aria.captures"><img id="cam-thumb-img" alt="" hidden><span class="badge" id="cam-count" hidden>0</span></button>
+    <button class="shutter" id="cam-shutter" data-i18n-aria="aria.shutter"></button>
+    <button class="btn primary sm" id="cam-done" data-i18n="btn.done"></button>
+  </div>
+  <div class="cam-flash" id="cam-flash"></div>
+</section>
+
+<!-- ============================ Export -->
+<div class="sheet-backdrop" id="sheet-export" hidden>
+  <div class="sheet" role="dialog">
+    <div class="sheet-head"><h2 data-i18n="export.title"></h2><button class="icon-btn" data-close="sheet-export" data-i18n-aria="aria.close"><span data-icon="x"></span></button></div>
+    <div class="field">
+      <div class="label" data-i18n="export.format"></div>
+      <div class="seg" data-setting="format">
+        <button data-v="pdf">PDF</button><button data-v="jpeg">JPEG</button><button data-v="png">PNG</button>
+      </div>
+    </div>
+    <div class="field" id="field-pagesize">
+      <div class="label" data-i18n="export.pageSize"></div>
+      <div class="seg" data-setting="pageSize">
+        <button data-v="a4">A4</button><button data-v="letter">US Letter</button><button data-v="fit" data-i18n="export.fit"></button>
+      </div>
+    </div>
+    <div class="field">
+      <div class="label" data-i18n="export.quality"></div>
+      <div class="seg" data-setting="quality">
+        <button data-v="high" data-i18n="export.high"></button><button data-v="medium" data-i18n="export.medium"></button><button data-v="low" data-i18n="export.low"></button>
+      </div>
+    </div>
+    <div class="field" id="field-range">
+      <div class="label" data-i18n="export.pages"></div>
+      <div class="seg" data-setting="range">
+        <button data-v="all" data-i18n="export.all"></button><button data-v="current" data-i18n="export.current"></button>
+      </div>
+    </div>
+    <div class="export-status" id="export-status"></div>
+    <div class="row">
+      <button class="btn secondary grow" id="export-download" disabled><span data-icon="download"></span><span data-i18n="btn.download"></span></button>
+      <button class="btn primary grow" id="export-share" disabled><span data-icon="share"></span><span id="export-share-label"></span></button>
+    </div>
+    <p class="muted small" id="export-hint"></p>
+  </div>
+</div>
+
+<!-- ============================ Settings -->
+<div class="sheet-backdrop" id="sheet-settings" hidden>
+  <div class="sheet" role="dialog">
+    <div class="sheet-head"><h2 data-i18n="settings.title"></h2><button class="icon-btn" data-close="sheet-settings" data-i18n-aria="aria.close"><span data-icon="x"></span></button></div>
+    <label class="switch-row">
+      <span><b data-i18n="settings.autodetect"></b><small data-i18n="settings.autodetectHint"></small></span>
+      <input type="checkbox" id="set-autodetect">
+    </label>
+    <div class="field">
+      <div class="label" data-i18n="settings.defaultFilter"></div>
+      <div class="seg" data-setting="defaultFilter">
+        <button data-v="original" data-i18n="filter.original"></button><button data-v="enhanced" data-i18n="filter.enhanced"></button><button data-v="gray" data-i18n="filter.grayShort"></button><button data-v="bw" data-i18n="filter.bw"></button>
+      </div>
+    </div>
+    <div class="field">
+      <div class="label" data-i18n="settings.camera"></div>
+      <div class="seg" data-setting="cameraMode">
+        <button data-v="app" data-i18n="settings.camApp"></button><button data-v="system" data-i18n="settings.camSystem"></button>
+      </div>
+      <small class="muted" data-i18n="settings.cameraHint"></small>
+    </div>
+    <div class="field">
+      <label class="label" for="set-lang" data-i18n="settings.language"></label>
+      <select id="set-lang" class="select"></select>
+    </div>
+    <p class="muted small" id="storage-info"></p>
+    <p class="muted small"><span data-i18n="settings.privacy"></span> <span data-i18n="settings.version"></span> <span id="app-version"></span></p>
+    <a class="link-btn" id="source-link" href="https://github.com/laserrapt0r/document-scanner-pwa" target="_blank" rel="noopener" data-i18n="settings.source"></a>
+  </div>
+</div>
+
+<!-- ============================ Document menu -->
+<div class="sheet-backdrop" id="sheet-docmenu" hidden>
+  <div class="sheet" role="dialog">
+    <button class="menu-item" id="dm-rename"><span data-icon="edit"></span><span data-i18n="menu.rename"></span></button>
+    <button class="menu-item" id="dm-duplicate"><span data-icon="file"></span><span data-i18n="menu.duplicate"></span></button>
+    <button class="menu-item danger" id="dm-delete"><span data-icon="trash"></span><span data-i18n="menu.delete"></span></button>
+    <button class="btn secondary block" data-close="sheet-docmenu" data-i18n="btn.cancel"></button>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden><div class="busy-box"><div class="spinner"></div><span id="busy-text"></span></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<input type="file" id="file-import" accept="image/*" multiple hidden>
+<input type="file" id="file-capture" accept="image/*" capture="environment" hidden>
+
+</body>
+</html>

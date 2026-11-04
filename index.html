@@ -206,6 +206,14 @@
   </div>
 </div>
 
+<!-- ============================ Install banner (shown in the browser only) -->
+<div class="install-banner" id="install-banner" role="dialog" hidden>
+  <img src="icons/icon-192.png" alt="" width="44" height="44">
+  <div class="ib-text"><b data-i18n="install.title"></b><span id="install-text"></span></div>
+  <button class="btn primary sm" id="install-btn" data-i18n="install.button" hidden></button>
+  <button class="icon-btn sm" id="install-close" data-i18n-aria="aria.close"><span data-icon="x"></span></button>
+</div>
+
 <div class="busy" id="busy" hidden><div class="busy-box"><div class="spinner"></div><span id="busy-text"></span></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

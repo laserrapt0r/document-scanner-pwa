@@ -1,6 +1,6 @@
 // Service worker: keeps the app available offline.
 // Bump VERSION whenever the app changes so users receive the new version.
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const CACHE = 'scan-app-' + VERSION;
 
 const ASSETS = [

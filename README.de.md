@@ -28,6 +28,7 @@ Sie läuft komplett im Browser und funktioniert offline. Alle Daten bleiben auf 
   - Alle Seiten oder nur die aktuelle Seite
   - **Teilen** über das Teilen-Menü: In Dateien sichern, Mail, AirDrop oder **Bild sichern** (bei JPEG/PNG landet das Bild in der Fotos-App)
   - **Herunterladen**; mehrere Bilder werden automatisch als ZIP gepackt
+- **Installationshinweis:** Beim Öffnen im Browser erklärt ein Banner, wie man die App auf den Home-Bildschirm legt (iOS). Unter Android/Chrome gibt es einen echten Installieren-Knopf.
 - **Sprachen:** Deutsch, Englisch, Französisch und Spanisch. Die App folgt der Gerätesprache, in den Einstellungen lässt sich die Sprache auch von Hand wählen.
 
 ## Auf dem iPhone installieren

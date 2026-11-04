@@ -6,7 +6,7 @@ import * as cam from './camera.js';
 import { icon } from './icons.js';
 import { t, tn, setLanguage, getLocale, applyTranslations, LANGUAGES } from './i18n.js';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -109,6 +109,7 @@ function busy(text) {
 function showView(name) {
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
   state.view = name;
+  document.body.dataset.view = name;
 }
 
 function openSheet(id) {
@@ -1132,6 +1133,70 @@ function registerSW() {
 
 // ------------------------------------------------------------------ Startup
 
+// ------------------------------------------------------------------ Install banner
+// iOS has no API to trigger the "Add to Home Screen" dialog, so we show instructions there.
+// Chromium browsers (Android, desktop) fire beforeinstallprompt, which gives us a real install button.
+
+let installEvent = null;
+let installMode = null; // 'ios' | 'prompt' | null
+const INSTALL_SNOOZE_DAYS = 30;
+
+const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+function installSnoozed() {
+  try {
+    const ts = +localStorage.getItem('install-dismissed') || 0;
+    return Date.now() - ts < INSTALL_SNOOZE_DAYS * 864e5;
+  } catch { return false; }
+}
+
+function renderInstallBanner() {
+  const banner = $('#install-banner');
+  if (!installMode) {
+    banner.hidden = true;
+    $('#install-hint').hidden = isStandalone();
+    return;
+  }
+  $('#install-text').innerHTML = installMode === 'ios'
+    ? t('install.ios', { share: icon('share', 'inline') })
+    : t('install.prompt');
+  $('#install-btn').hidden = installMode !== 'prompt';
+  banner.hidden = false;
+  $('#install-hint').hidden = true;
+}
+
+function maybeShowInstall() {
+  if (isStandalone() || installSnoozed()) return;
+  if (isIOS()) installMode = 'ios'; // iOS browsers can only install via the share menu
+  else if (installEvent) installMode = 'prompt';
+  renderInstallBanner();
+}
+
+function hideInstall(snooze) {
+  installMode = null;
+  renderInstallBanner();
+  if (snooze) { try { localStorage.setItem('install-dismissed', String(Date.now())); } catch { /* ignore */ } }
+}
+
+function initInstall() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installEvent = e;
+    maybeShowInstall();
+  });
+  window.addEventListener('appinstalled', () => { installEvent = null; hideInstall(false); });
+  $('#install-close').onclick = () => hideInstall(true);
+  $('#install-btn').onclick = async () => {
+    if (!installEvent) return;
+    installEvent.prompt();
+    const choice = await installEvent.userChoice.catch(() => null);
+    installEvent = null;
+    hideInstall(choice?.outcome !== 'accepted');
+  };
+  setTimeout(maybeShowInstall, 1200);
+}
+
 // ------------------------------------------------------------------ Language
 
 function fillLanguageSelect() {
@@ -1154,6 +1219,7 @@ function applyLanguage() {
   if (state.doc) renderDoc();
   if (state.view === 'editor') renderFilterThumbs();
   syncExportUi();
+  renderInstallBanner();
 }
 
 async function init() {
@@ -1163,6 +1229,8 @@ async function init() {
   hydrateIcons();
   initSegs();
   bindEvents();
+  initInstall();
+  document.body.dataset.view = state.view;
   const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
   $('#install-hint').hidden = standalone;
   try {

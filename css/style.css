@@ -507,3 +507,29 @@ button:disabled { opacity: .4; cursor: default; }
   font-size: 15px;
 }
 a.link-btn { text-decoration: none; text-align: center; }
+
+/* ------------------------------------------------ Install banner */
+.install-banner {
+  position: fixed;
+  z-index: 40;
+  left: 12px;
+  right: 12px;
+  bottom: calc(var(--safe-bottom) + 84px);
+  max-width: 540px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 8px 12px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  animation: ib-in .3s ease-out;
+}
+body:not([data-view="home"]) .install-banner { display: none; }
+.install-banner img { border-radius: 10px; flex: none; }
+.ib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.ib-text b { color: var(--text); font-size: 15px; }
+.ib-text .i.inline { width: 16px; height: 16px; vertical-align: -3px; color: var(--accent); }
+@keyframes ib-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }

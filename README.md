@@ -28,6 +28,7 @@ It runs entirely in the browser and works offline. All data stays on your device
   - All pages or only the current page
   - **Share** via the system share sheet: save to Files, Mail, AirDrop or **Save Image** (for JPEG/PNG this puts the image in the Photos app)
   - **Download**; several images are bundled into a ZIP automatically
+- **Install prompt:** when opened in the browser, a banner explains how to add the app to the home screen (iOS). On Android/Chrome it offers a real install button.
 - **Languages:** English, German, French and Spanish. The app follows the device language, and you can switch manually in the settings.
 
 ## Install on iPhone

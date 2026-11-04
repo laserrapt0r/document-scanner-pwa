@@ -10,6 +10,10 @@ export const LANGUAGES = [
 
 const DICT = {
   en: {
+    'install.title': 'Install as app',
+    'install.ios': 'In Safari tap {share} <b>Share</b> (via “•••” if needed), then <b>Add to Home Screen</b>.',
+    'install.prompt': 'Quick access from your home screen – works offline.',
+    'install.button': 'Install',
     'home.emptyTitle': 'No scans yet',
     'home.emptyText': 'Tap “Scan” to photograph a document, or import images from your photo library.',
     'home.installHint': 'Tip: In Safari tap <b>Share</b> → <b>Add to Home Screen</b> to install the app.',
@@ -129,6 +133,10 @@ const DICT = {
   },
 
   de: {
+    'install.title': 'Als App installieren',
+    'install.ios': 'Tippe in Safari auf {share} <b>Teilen</b> (ggf. über „•••“) und dann auf <b>Zum Home-Bildschirm</b>.',
+    'install.prompt': 'Schneller Zugriff vom Home-Bildschirm – auch offline.',
+    'install.button': 'Installieren',
     'home.emptyTitle': 'Noch keine Scans',
     'home.emptyText': 'Tippe auf „Scannen“, um ein Dokument zu fotografieren, oder importiere Bilder aus deiner Mediathek.',
     'home.installHint': 'Tipp: In Safari auf <b>Teilen</b> → <b>Zum Home-Bildschirm</b> tippen, um die App zu installieren.',
@@ -248,6 +256,10 @@ const DICT = {
   },
 
   fr: {
+    'install.title': 'Installer l’app',
+    'install.ios': 'Dans Safari, touchez {share} <b>Partager</b> (via « ••• » si besoin), puis <b>Sur l’écran d’accueil</b>.',
+    'install.prompt': 'Accès rapide depuis l’écran d’accueil, même hors ligne.',
+    'install.button': 'Installer',
     'home.emptyTitle': 'Aucun scan pour l’instant',
     'home.emptyText': 'Touchez « Scanner » pour photographier un document, ou importez des images depuis votre photothèque.',
     'home.installHint': 'Astuce : dans Safari, touchez <b>Partager</b> → <b>Sur l’écran d’accueil</b> pour installer l’app.',
@@ -367,6 +379,10 @@ const DICT = {
   },
 
   es: {
+    'install.title': 'Instalar como app',
+    'install.ios': 'En Safari toca {share} <b>Compartir</b> (desde «•••» si hace falta) y luego <b>Añadir a pantalla de inicio</b>.',
+    'install.prompt': 'Acceso rápido desde la pantalla de inicio, también sin conexión.',
+    'install.button': 'Instalar',
     'home.emptyTitle': 'Aún no hay escaneos',
     'home.emptyText': 'Toca «Escanear» para fotografiar un documento o importa imágenes de tu fototeca.',
     'home.installHint': 'Consejo: en Safari toca <b>Compartir</b> → <b>Añadir a pantalla de inicio</b> para instalar la app.',

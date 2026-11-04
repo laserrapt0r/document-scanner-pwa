@@ -15,9 +15,13 @@ It runs entirely in the browser and works offline. All data stays on your device
   - In-app camera with batch mode (several pages in a row) and torch, where the device supports one
   - Alternatively the native iOS camera (configurable)
   - Import images from the photo library, including several at once
-- **Automatic edge detection** with perspective correction
-- **Manual cropping** with four corner handles and a magnifying loupe for precise placement
-- **Filters:** Color (original), Enhanced (removes shadows, paper turns white), Grayscale, Black & White
+- **Live document frame** in the camera view
+- **Automatic edge detection**, robust in low light (denoising, contour analysis, line fitting)
+- **Perspective correction with the true aspect ratio**, so pages are not squashed or stretched
+- **Automatic torch** in low light, where the device supports it, otherwise a hint
+- **Frame review after each photo:** adjust the detected frame, or retake the photo
+- **Manual cropping:** drag corners or whole edges, or draw a new frame; a magnifying loupe helps with precise placement
+- **Filters:** Color (original), Enhanced (removes shadows, paper turns white), Grayscale, Black & White; with noise reduction in low light
 - **Brightness and contrast**, optionally applied to all pages at once
 - **Rotate** left and right
 - **Multi-page documents:** add, reorder and delete pages, swipe between pages

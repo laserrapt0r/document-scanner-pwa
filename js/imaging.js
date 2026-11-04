@@ -114,6 +114,18 @@ export function quadArea(p) {
   return Math.abs(a) / 2;
 }
 
+// True if the quad (in order) is convex, i.e. a valid frame.
+export function isConvex(p) {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = p[i], b = p[(i + 1) % 4], c = p[(i + 2) % 4];
+    const cr = Math.sign((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x));
+    if (!cr || (sign && cr !== sign)) return false;
+    sign = cr;
+  }
+  return true;
+}
+
 // Sort corners into the order top-left, top-right, bottom-right, bottom-left.
 export function orderCorners(pts) {
   const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
@@ -185,13 +197,63 @@ export function homography(from, to) {
   return solve(A, b);
 }
 
+// Estimates the real width/height ratio of a rectangle photographed in perspective
+// (Zhang & He, "Whiteboard scanning and image enhancement"). q = [TL, TR, BR, BL] in pixels,
+// W/H = size of the full (uncropped) photo, whose center is assumed to be the optical center.
+export function estimateAspect(q, W, H) {
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const naive = (d(q[0], q[1]) + d(q[3], q[2])) / Math.max(1e-6, d(q[0], q[3]) + d(q[1], q[2]));
+  const m1 = [q[0][0], q[0][1], 1], m2 = [q[1][0], q[1][1], 1];
+  const m3 = [q[3][0], q[3][1], 1], m4 = [q[2][0], q[2][1], 1];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const c14 = cross(m1, m4);
+  const k2 = dot(c14, m3) / dot(cross(m2, m4), m3);
+  const k3 = dot(c14, m2) / dot(cross(m3, m4), m2);
+  if (!isFinite(k2) || !isFinite(k3)) return snapAspect(naive);
+  const n2 = [k2 * m2[0] - m1[0], k2 * m2[1] - m1[1], k2 * m2[2] - m1[2]];
+  const n3 = [k3 * m3[0] - m1[0], k3 * m3[1] - m1[1], k3 * m3[2] - m1[2]];
+  const u0 = W / 2, v0 = H / 2, big = Math.max(W, H);
+
+  // Focal length: phone main cameras have f ≈ 0.75–0.95 × the long image side. The value estimated
+  // from the quad is very sensitive to corner errors, so it is only trusted within a plausible
+  // range and averaged (geometrically) with that prior.
+  const prior = 0.82 * big;
+  let f = prior;
+  const den = n2[2] * n3[2];
+  if (Math.abs(den) > 1e-12) {
+    const f2 = -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + den * u0 * u0) +
+      (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + den * v0 * v0)) / den;
+    const est = f2 > 0 ? Math.sqrt(f2) : 0;
+    if (est > 0.6 * big && est < 1.2 * big) f = Math.sqrt(est * prior);
+  }
+  const len2 = (n) => {
+    const a = (n[0] - u0 * n[2]) / f, b = (n[1] - v0 * n[2]) / f, c = n[2];
+    return a * a + b * b + c * c;
+  };
+  const ratio = Math.sqrt(len2(n2) / len2(n3));
+  if (!isFinite(ratio) || ratio / naive > 1.6 || naive / ratio > 1.6) return snapAspect(naive);
+  return snapAspect(ratio);
+}
+
+// Snap to common paper formats (A4/A-series, US Letter) when very close.
+function snapAspect(r) {
+  for (const t of [Math.SQRT1_2, Math.SQRT2, 8.5 / 11, 11 / 8.5]) if (Math.abs(r / t - 1) < 0.035) return t;
+  return Math.min(5, Math.max(0.2, r));
+}
+
 // Perspective correction: warp a quadrilateral of src onto a rectangle (bilinear interpolation).
 export function warp(src, corners, maxOut) {
   const { width: sw, height: sh, data: sd } = src;
   const q = corners.map((p) => [p.x * sw, p.y * sh]);
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-  let w = Math.max(dist(q[0], q[1]), dist(q[3], q[2]));
-  let h = Math.max(dist(q[0], q[3]), dist(q[1], q[2]));
+  const top = dist(q[0], q[1]), bottom = dist(q[3], q[2]);
+  const left = dist(q[0], q[3]), right = dist(q[1], q[2]);
+  // Keep roughly the pixel area of the source, but use the real (perspective-corrected) aspect ratio.
+  const area = Math.max(top, bottom) * Math.max(left, right);
+  const ratio = estimateAspect(q, sw, sh);
+  let w = Math.sqrt(area * ratio);
+  let h = Math.sqrt(area / ratio);
   const s = Math.min(1, maxOut / Math.max(w, h));
   w = Math.max(1, Math.round(w * s));
   h = Math.max(1, Math.round(h * s));
@@ -324,22 +386,65 @@ function bgRow(G, xs, y, w, ch, out) {
   }
 }
 
+// Mean brightness of the estimated paper background (0..255).
+function paperLevel(G, ch) {
+  let s = 0;
+  const n = G.gw * G.gh;
+  for (let g = 0; g < n; g++) {
+    s += ch === 3 ? G.grid[g * 3] * 0.299 + G.grid[g * 3 + 1] * 0.587 + G.grid[g * 3 + 2] * 0.114 : G.grid[g];
+  }
+  return s / n;
+}
+
+// Separable box blur, in place, on `ch` channels of an interleaved buffer with the given stride.
+function boxBlurInterleaved(px, w, h, stride, ch, r) {
+  const tmp = new Float32Array(w * h * ch);
+  const k = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    for (let c = 0; c < ch; c++) {
+      let acc = 0;
+      for (let x = -r; x <= r; x++) acc += px[(y * w + Math.min(w - 1, Math.max(0, x))) * stride + c];
+      for (let x = 0; x < w; x++) {
+        tmp[(y * w + x) * ch + c] = acc / k;
+        const xo = Math.max(0, x - r), xi = Math.min(w - 1, x + r + 1);
+        acc += px[(y * w + xi) * stride + c] - px[(y * w + xo) * stride + c];
+      }
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    for (let c = 0; c < ch; c++) {
+      let acc = 0;
+      for (let y = -r; y <= r; y++) acc += tmp[(Math.min(h - 1, Math.max(0, y)) * w + x) * ch + c];
+      for (let y = 0; y < h; y++) {
+        px[(y * w + x) * stride + c] = acc / k;
+        const yo = Math.max(0, y - r), yi = Math.min(h - 1, y + r + 1);
+        acc += tmp[(yi * w + x) * ch + c] - tmp[(yo * w + x) * ch + c];
+      }
+    }
+  }
+}
+
 export function applyFilter(imgData, { filter = 'original', brightness = 0, contrast = 0 } = {}) {
   const { width: w, height: h, data: d } = imgData;
   const N = w * h;
 
   if (filter === 'enhanced') {
     // "Magic color": even out lighting, white-balance on paper, boost contrast + saturation.
-    const G = backgroundGrid(d, w, h, 4, 3);
+    let G = backgroundGrid(d, w, h, 4, 3);
+    // In low light the paper is dark and the strong gain would amplify sensor noise: denoise first.
+    if (paperLevel(G, 3) < 125) {
+      boxBlurInterleaved(d, w, h, 4, 3, paperLevel(G, 3) < 80 ? 2 : 1);
+      G = backgroundGrid(d, w, h, 4, 3);
+    }
     const xs = gridXs(G, w);
     const row = new Float32Array(w * 3);
     for (let y = 0; y < h; y++) {
       bgRow(G, xs, y, w, 3, row);
       let i = y * w * 4;
       for (let x = 0, k = 0; x < w; x++, i += 4, k += 3) {
-        const r = 255 - (255 - (d[i] * 255) / Math.max(row[k], 24)) * 1.35;
-        const g = 255 - (255 - (d[i + 1] * 255) / Math.max(row[k + 1], 24)) * 1.35;
-        const b = 255 - (255 - (d[i + 2] * 255) / Math.max(row[k + 2], 24)) * 1.35;
+        const r = 255 - (255 - (d[i] * 255) / Math.max(row[k], 48)) * 1.35;
+        const g = 255 - (255 - (d[i + 1] * 255) / Math.max(row[k + 1], 48)) * 1.35;
+        const b = 255 - (255 - (d[i + 2] * 255) / Math.max(row[k + 2], 48)) * 1.35;
         const l = (r + g + b) / 3;
         d[i] = l + (r - l) * 1.25;
         d[i + 1] = l + (g - l) * 1.25;
@@ -355,15 +460,30 @@ export function applyFilter(imgData, { filter = 'original', brightness = 0, cont
     // Black/white: even out lighting, then binarize with a threshold.
     const L = new Uint8ClampedArray(N);
     for (let p = 0, i = 0; p < N; p++, i += 4) L[p] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-    const G = backgroundGrid(L, w, h, 1, 1);
+    let G = backgroundGrid(L, w, h, 1, 1);
+    // Smoothing before thresholding avoids grainy output; stronger in low light.
+    boxBlurInterleaved(L, w, h, 1, 1, paperLevel(G, 1) < 100 ? 2 : 1);
+    G = backgroundGrid(L, w, h, 1, 1);
     const xs = gridXs(G, w);
     const row = new Float32Array(w);
     const T = 200 - brightness * 0.7;
+    const B = new Uint8Array(N); // 1 = black
     for (let y = 0; y < h; y++) {
       bgRow(G, xs, y, w, 1, row);
-      for (let x = 0, p = y * w, i = p * 4; x < w; x++, p++, i += 4) {
-        const v = (L[p] * 255) / Math.max(row[x], 24);
-        d[i] = d[i + 1] = d[i + 2] = v < T ? 0 : 255;
+      for (let x = 0, p = y * w; x < w; x++, p++) {
+        B[p] = (L[p] * 255) / Math.max(row[x], 40) < T ? 1 : 0;
+      }
+    }
+    // Remove isolated specks (black pixels with at most one black neighbour).
+    for (let y = 0, p = 0; y < h; y++) {
+      for (let x = 0; x < w; x++, p++) {
+        let black = B[p];
+        if (black && x > 0 && y > 0 && x < w - 1 && y < h - 1) {
+          const n = B[p - 1] + B[p + 1] + B[p - w] + B[p + w] + B[p - w - 1] + B[p - w + 1] + B[p + w - 1] + B[p + w + 1];
+          if (n <= 1) black = 0;
+        }
+        const i = p * 4;
+        d[i] = d[i + 1] = d[i + 2] = black ? 0 : 255;
       }
     }
     return imgData;
@@ -408,49 +528,30 @@ export async function renderPage(page, outMax, { cache = false } = {}) {
 }
 
 // ---------------------------------------------------------------- Edge detection
+//
+// Pipeline (works on a ~400 px preview):
+//  1. Two feature images: luminance and "whiteness" (min of R,G,B – paper is bright AND grey,
+//     while wooden/coloured tables are not). Both are denoised, more strongly in low light.
+//  2. Otsu threshold -> morphological opening (removes noise and thin bridges) -> largest region.
+//  3. Convex hull of the region outline -> simplified to the 4-gon with the largest area.
+//  4. Each side is refined with a least-squares line fit through the outline pixels near it;
+//     the corners are the intersections of these lines.
+//  5. Plausibility checks (convex, sensible angles, region fills the quad, size).
+// The candidate with the best score wins; null if nothing plausible is found.
 
 function blur(g, w, h, r) {
-  const tmp = new Float32Array(w * h);
-  const out = new Uint8ClampedArray(w * h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0;
-      for (let k = -r; k <= r; k++) {
-        const xx = x + k;
-        if (xx >= 0 && xx < w) { s += g[y * w + xx]; n++; }
-      }
-      tmp[y * w + x] = s / n;
-    }
-  }
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      let s = 0, n = 0;
-      for (let k = -r; k <= r; k++) {
-        const yy = y + k;
-        if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; n++; }
-      }
-      out[y * w + x] = s / n;
-    }
-  }
+  const out = Float32Array.from(g);
+  boxBlurInterleaved(out, w, h, 1, 1, r);
   return out;
 }
 
-// Finds the largest bright area (paper on a darker background) and its four corners.
-// Returns null if no plausible document was found.
-export async function detectCorners(page) {
-  const src = await getSource(page, 360, false);
-  const { width: w, height: h, data: d } = src;
-  const N = w * h;
-  let g = new Uint8ClampedArray(N);
-  for (let i = 0, j = 0; i < N; i++, j += 4) g[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
-  g = blur(g, w, h, 2);
-
-  // Otsu threshold
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < N; i++) hist[g[i]]++;
+function otsu(g) {
+  const hist = new Float64Array(256);
+  for (let i = 0; i < g.length; i++) hist[Math.max(0, Math.min(255, g[i] | 0))]++;
+  const N = g.length;
   let sum = 0;
   for (let t = 0; t < 256; t++) sum += t * hist[t];
-  let sumB = 0, wB = 0, best = 0, thr = 127;
+  let sumB = 0, wB = 0, best = -1, thr = 127;
   for (let t = 0; t < 256; t++) {
     wB += hist[t];
     if (!wB) continue;
@@ -461,44 +562,207 @@ export async function detectCorners(page) {
     const between = wB * wF * (mB - mF) * (mB - mF);
     if (between > best) { best = between; thr = t; }
   }
+  return thr;
+}
 
-  // Largest connected bright component
-  const visited = new Uint8Array(N);
+function morph(mask, w, h, dilate) {
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let v = dilate ? 0 : 1;
+      for (let dy = -1; dy <= 1 && v === (dilate ? 0 : 1); dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          const m = mask[yy * w + xx];
+          if (dilate ? m : !m) { v = dilate ? 1 : 0; break; }
+        }
+      }
+      out[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
+function largestRegion(mask, w, h) {
+  const N = w * h;
+  const label = new Int32Array(N).fill(-1);
   const queue = new Int32Array(N);
-  let comp = null;
+  let best = -1, bestCount = 0, id = 0;
   for (let s = 0; s < N; s++) {
-    if (visited[s] || g[s] <= thr) continue;
-    let head = 0, tail = 0, count = 0;
-    let minS = Infinity, maxS = -Infinity, minD = Infinity, maxD = -Infinity;
-    let tl = s, tr = s, br = s, bl = s;
-    queue[tail++] = s; visited[s] = 1;
+    if (!mask[s] || label[s] >= 0) continue;
+    let head = 0, tail = 0;
+    queue[tail++] = s; label[s] = id;
     while (head < tail) {
       const p = queue[head++];
-      const x = p % w, y = (p / w) | 0;
-      count++;
-      const sm = x + y, df = x - y;
-      if (sm < minS) { minS = sm; tl = p; }
-      if (sm > maxS) { maxS = sm; br = p; }
-      if (df > maxD) { maxD = df; tr = p; }
-      if (df < minD) { minD = df; bl = p; }
-      if (x > 0) { const q = p - 1; if (!visited[q] && g[q] > thr) { visited[q] = 1; queue[tail++] = q; } }
-      if (x < w - 1) { const q = p + 1; if (!visited[q] && g[q] > thr) { visited[q] = 1; queue[tail++] = q; } }
-      if (y > 0) { const q = p - w; if (!visited[q] && g[q] > thr) { visited[q] = 1; queue[tail++] = q; } }
-      if (y < h - 1) { const q = p + w; if (!visited[q] && g[q] > thr) { visited[q] = 1; queue[tail++] = q; } }
+      const x = p % w;
+      if (x > 0 && mask[p - 1] && label[p - 1] < 0) { label[p - 1] = id; queue[tail++] = p - 1; }
+      if (x < w - 1 && mask[p + 1] && label[p + 1] < 0) { label[p + 1] = id; queue[tail++] = p + 1; }
+      if (p >= w && mask[p - w] && label[p - w] < 0) { label[p - w] = id; queue[tail++] = p - w; }
+      if (p < N - w && mask[p + w] && label[p + w] < 0) { label[p + w] = id; queue[tail++] = p + w; }
     }
-    if (!comp || count > comp.count) comp = { count, tl, tr, br, bl };
+    if (tail > bestCount) { bestCount = tail; best = id; }
+    id++;
   }
-  if (!comp) return null;
+  if (best < 0) return null;
+  const xs = [], ys = [];
+  for (let p = 0; p < N; p++) {
+    if (label[p] !== best) continue;
+    const x = p % w, y = (p / w) | 0;
+    if (x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
+      label[p - 1] !== best || label[p + 1] !== best || label[p - w] !== best || label[p + w] !== best) {
+      xs.push(x + 0.5); ys.push(y + 0.5);
+    }
+  }
+  return { count: bestCount, xs, ys };
+}
 
-  const pts = [comp.tl, comp.tr, comp.br, comp.bl].map((p) => ({
-    x: Math.min(1, Math.max(0, ((p % w) + 0.5) / w)),
-    y: Math.min(1, Math.max(0, (((p / w) | 0) + 0.5) / h)),
-  }));
-  const areaFrac = comp.count / N;
-  const qa = quadArea(pts);
-  if (areaFrac < 0.12 || areaFrac > 0.97) return null;
-  if (qa < 0.12 || qa > 0.985) return null;
-  if (areaFrac / qa < 0.85) return null; // area is not a quadrilateral
-  if (isFull(pts)) return null;
-  return orderCorners(pts);
+function convexHull(xs, ys) {
+  const idx = xs.map((_, i) => i).sort((a, b) => xs[a] - xs[b] || ys[a] - ys[b]);
+  const cr = (o, a, b) => (xs[a] - xs[o]) * (ys[b] - ys[o]) - (ys[a] - ys[o]) * (xs[b] - xs[o]);
+  const lower = [], upper = [];
+  for (const i of idx) {
+    while (lower.length >= 2 && cr(lower[lower.length - 2], lower[lower.length - 1], i) <= 0) lower.pop();
+    lower.push(i);
+  }
+  for (let k = idx.length - 1; k >= 0; k--) {
+    const i = idx[k];
+    while (upper.length >= 2 && cr(upper[upper.length - 2], upper[upper.length - 1], i) <= 0) upper.pop();
+    upper.push(i);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1)).map((i) => [xs[i], ys[i]]);
+}
+
+// Repeatedly drop the hull vertex whose removal loses the least area until 4 remain.
+function hullToQuad(hull) {
+  const pts = hull.slice();
+  const tri = (a, b, c) => Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
+  while (pts.length > 4) {
+    let mi = 0, ma = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const a = tri(pts[(i - 1 + pts.length) % pts.length], pts[i], pts[(i + 1) % pts.length]);
+      if (a < ma) { ma = a; mi = i; }
+    }
+    pts.splice(mi, 1);
+  }
+  return pts.length === 4 ? pts : null;
+}
+
+// Fit a line through outline pixels close to each side and intersect neighbouring lines.
+function refineQuad(quad, xs, ys, diag) {
+  const tol = Math.max(2, diag * 0.02);
+  const lines = quad.map((a, k) => {
+    const b = quad[(k + 1) % 4];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+    const ux = dx / L, uy = dy / L;
+    let n = 0, mx = 0, my = 0;
+    const sel = [];
+    for (let i = 0; i < xs.length; i++) {
+      const px = xs[i] - a[0], py = ys[i] - a[1];
+      const t = px * ux + py * uy;
+      if (t < L * 0.1 || t > L * 0.9) continue;
+      if (Math.abs(px * uy - py * ux) > tol) continue;
+      sel.push(i); mx += xs[i]; my += ys[i]; n++;
+    }
+    if (n < 8) return { px: a[0], py: a[1], dx: ux, dy: uy };
+    mx /= n; my /= n;
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const i of sel) {
+      const ex = xs[i] - mx, ey = ys[i] - my;
+      sxx += ex * ex; syy += ey * ey; sxy += ex * ey;
+    }
+    const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    return { px: mx, py: my, dx: Math.cos(ang), dy: Math.sin(ang) };
+  });
+  return quad.map((orig, k) => {
+    const l1 = lines[(k + 3) % 4], l2 = lines[k];
+    const det = l1.dx * l2.dy - l1.dy * l2.dx;
+    if (Math.abs(det) < 1e-6) return orig;
+    const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / det;
+    const p = [l1.px + t * l1.dx, l1.py + t * l1.dy];
+    return Math.hypot(p[0] - orig[0], p[1] - orig[1]) > diag * 0.06 ? orig : p;
+  });
+}
+
+function quadOk(q, w, h) {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+    const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    const sg = Math.sign(cr);
+    if (!sg || (sign && sg !== sign)) return false;
+    sign = sg;
+    const v1 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+    const cos = (v1[0] * v2[0] + v1[1] * v2[1]) / (Math.hypot(...v1) * Math.hypot(...v2) || 1);
+    const deg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
+    if (deg < 40 || deg > 140) return false;
+  }
+  for (const p of q) if (p[0] < -0.02 * w || p[0] > 1.02 * w || p[1] < -0.02 * h || p[1] > 1.02 * h) return false;
+  return true;
+}
+
+export function meanLuminance(img) {
+  const d = img.data;
+  let s = 0;
+  for (let i = 0; i < d.length; i += 16) s += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+  return s / (d.length / 16);
+}
+
+/**
+ * Detects a document in an ImageData (ideally ~300–400 px).
+ * @returns {{corners: {x:number,y:number}[], score: number} | null} normalized corners TL,TR,BR,BL
+ */
+export function detectQuad(img) {
+  const { width: w, height: h, data: d } = img;
+  const N = w * h, diag = Math.hypot(w, h);
+  const lum = new Float32Array(N), white = new Float32Array(N);
+  let mean = 0;
+  for (let p = 0, i = 0; p < N; p++, i += 4) {
+    lum[p] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    white[p] = Math.min(d[i], d[i + 1], d[i + 2]);
+    mean += lum[p];
+  }
+  mean /= N;
+  const r = mean < 70 ? 3 : 2; // stronger denoising in low light
+
+  let best = null;
+  for (const f of [blur(lum, w, h, r), blur(white, w, h, r)]) {
+    const thr = otsu(f);
+    let mask = new Uint8Array(N);
+    let brightSum = 0, darkSum = 0, nb = 0;
+    for (let p = 0; p < N; p++) {
+      if (f[p] > thr) { mask[p] = 1; brightSum += f[p]; nb++; } else darkSum += f[p];
+    }
+    // Paper must be clearly brighter than its surroundings.
+    if (!nb || nb === N || brightSum / nb - darkSum / (N - nb) < 18) continue;
+    mask = morph(morph(mask, w, h, false), w, h, false);
+    mask = morph(morph(mask, w, h, true), w, h, true);
+    const reg = largestRegion(mask, w, h);
+    if (!reg || reg.count < N * 0.08 || reg.xs.length < 20) continue;
+    const hull = convexHull(reg.xs, reg.ys);
+    let quad = hull.length >= 4 ? hullToQuad(hull) : null;
+    if (!quad) continue;
+    quad = refineQuad(quad, reg.xs, reg.ys, diag);
+    if (!quadOk(quad, w, h)) continue;
+    const qa = quadArea(quad.map((p) => ({ x: p[0], y: p[1] })));
+    const fill = reg.count / qa;
+    const areaFrac = qa / N;
+    if (fill < 0.82 || fill > 1.2 || areaFrac < 0.08 || areaFrac > 0.985) continue;
+    const score = (1 - Math.abs(1 - fill)) * (0.6 + 0.4 * Math.min(1, areaFrac / 0.5));
+    if (!best || score > best.score) best = { quad, score };
+  }
+  if (!best) return null;
+  const corners = orderCorners(best.quad.map((p) => ({
+    x: Math.min(1, Math.max(0, p[0] / w)),
+    y: Math.min(1, Math.max(0, p[1] / h)),
+  })));
+  if (isFull(corners)) return null;
+  return { corners, score: best.score };
+}
+
+export async function detectCorners(page) {
+  const src = await getSource(page, 400, false);
+  return detectQuad(src)?.corners || null;
 }

@@ -88,13 +88,18 @@
       </div>
     </div>
     <div class="panel-pane" data-pane="crop" hidden>
+      <p class="crop-hint" data-i18n="crop.hint"></p>
       <div class="row">
         <button class="btn ghost sm" id="crop-auto"><span data-icon="scan"></span><span data-i18n="crop.auto"></span></button>
         <button class="btn ghost sm" id="crop-full"><span data-icon="maximize"></span><span data-i18n="crop.full"></span></button>
       </div>
-      <div class="row">
+      <div class="row crop-edit-btns">
         <button class="btn secondary grow" id="crop-cancel" data-i18n="btn.cancel"></button>
         <button class="btn primary grow" id="crop-apply"><span data-icon="check"></span><span data-i18n="crop.apply"></span></button>
+      </div>
+      <div class="row review-btns">
+        <button class="btn secondary grow" id="review-retake"><span data-icon="camera"></span><span data-i18n="review.retake"></span></button>
+        <button class="btn primary grow" id="review-keep"><span data-icon="check"></span><span data-i18n="review.keep"></span></button>
       </div>
     </div>
   </div>
@@ -111,13 +116,14 @@
 <!-- ============================ Camera -->
 <section id="view-camera" class="view camera">
   <video id="cam-video" playsinline muted autoplay></video>
+  <canvas id="cam-overlay"></canvas>
   <div class="cam-error" id="cam-error" hidden>
     <p id="cam-error-text"></p>
     <button class="btn primary" id="cam-system"><span data-icon="camera"></span><span data-i18n="cam.useSystem"></span></button>
   </div>
   <div class="cam-top">
     <button class="icon-btn round" id="cam-close" data-i18n-aria="aria.close"><span data-icon="x"></span></button>
-    <span class="cam-hint" data-i18n="cam.hint"></span>
+    <span class="cam-hint" id="cam-hint" data-i18n="cam.hint"></span>
     <button class="icon-btn round" id="cam-torch" data-i18n-aria="aria.torch" hidden><span data-icon="flash"></span></button>
   </div>
   <div class="cam-bottom">
@@ -172,6 +178,14 @@
     <label class="switch-row">
       <span><b data-i18n="settings.autodetect"></b><small data-i18n="settings.autodetectHint"></small></span>
       <input type="checkbox" id="set-autodetect">
+    </label>
+    <label class="switch-row">
+      <span><b data-i18n="settings.reviewCrop"></b><small data-i18n="settings.reviewCropHint"></small></span>
+      <input type="checkbox" id="set-review">
+    </label>
+    <label class="switch-row">
+      <span><b data-i18n="settings.autoTorch"></b><small data-i18n="settings.autoTorchHint"></small></span>
+      <input type="checkbox" id="set-autotorch">
     </label>
     <div class="field">
       <div class="label" data-i18n="settings.defaultFilter"></div>

@@ -10,6 +10,16 @@ export const LANGUAGES = [
 
 const DICT = {
   en: {
+    'crop.invalid': 'The frame is twisted – please move the corners so that they form a rectangle.',
+    'cam.torchAuto': 'Low light – torch switched on',
+    'cam.lowLight': 'Low light – hold steady or use the iOS camera with flash',
+    'crop.hint': 'Drag corners or edges – or drag anywhere else to draw a new frame.',
+    'review.retake': 'Retake',
+    'review.keep': 'Keep',
+    'settings.reviewCrop': 'Review frame after capture',
+    'settings.reviewCropHint': 'Adjust the detected frame after each photo before continuing.',
+    'settings.autoTorch': 'Turn on torch automatically',
+    'settings.autoTorchHint': 'Switches the torch on in low light (in-app camera, if the device supports it).',
     'install.title': 'Install as app',
     'install.ios': 'In Safari tap {share} <b>Share</b> (via “•••” if needed), then <b>Add to Home Screen</b>.',
     'install.prompt': 'Quick access from your home screen – works offline.',
@@ -133,6 +143,16 @@ const DICT = {
   },
 
   de: {
+    'crop.invalid': 'Der Rahmen ist verdreht – bitte die Ecken so ziehen, dass ein Viereck entsteht.',
+    'cam.torchAuto': 'Wenig Licht – Taschenlampe eingeschaltet',
+    'cam.lowLight': 'Wenig Licht – ruhig halten oder iOS-Kamera mit Blitz nutzen',
+    'crop.hint': 'Ecken oder Kanten ziehen – oder an beliebiger anderer Stelle einen neuen Rahmen aufziehen.',
+    'review.retake': 'Neu aufnehmen',
+    'review.keep': 'Übernehmen',
+    'settings.reviewCrop': 'Rahmen nach der Aufnahme prüfen',
+    'settings.reviewCropHint': 'Nach jedem Foto den erkannten Rahmen anpassen, bevor es weitergeht.',
+    'settings.autoTorch': 'Licht automatisch einschalten',
+    'settings.autoTorchHint': 'Schaltet bei wenig Licht die Taschenlampe ein (In-App-Kamera, sofern vom Gerät unterstützt).',
     'install.title': 'Als App installieren',
     'install.ios': 'Tippe in Safari auf {share} <b>Teilen</b> (ggf. über „•••“) und dann auf <b>Zum Home-Bildschirm</b>.',
     'install.prompt': 'Schneller Zugriff vom Home-Bildschirm – auch offline.',
@@ -256,6 +276,16 @@ const DICT = {
   },
 
   fr: {
+    'crop.invalid': 'Le cadre est croisé – déplacez les coins pour former un quadrilatère.',
+    'cam.torchAuto': 'Peu de lumière – lampe allumée',
+    'cam.lowLight': 'Peu de lumière – restez stable ou utilisez l’appareil photo iOS avec flash',
+    'crop.hint': 'Faites glisser les coins ou les bords – ou tracez un nouveau cadre ailleurs.',
+    'review.retake': 'Reprendre',
+    'review.keep': 'Valider',
+    'settings.reviewCrop': 'Vérifier le cadre après la prise',
+    'settings.reviewCropHint': 'Ajustez le cadre détecté après chaque photo avant de continuer.',
+    'settings.autoTorch': 'Allumer la lampe automatiquement',
+    'settings.autoTorchHint': 'Allume la lampe en cas de faible luminosité (appareil intégré, si l’appareil le permet).',
     'install.title': 'Installer l’app',
     'install.ios': 'Dans Safari, touchez {share} <b>Partager</b> (via « ••• » si besoin), puis <b>Sur l’écran d’accueil</b>.',
     'install.prompt': 'Accès rapide depuis l’écran d’accueil, même hors ligne.',
@@ -379,6 +409,16 @@ const DICT = {
   },
 
   es: {
+    'crop.invalid': 'El marco está cruzado: mueve las esquinas para que formen un cuadrilátero.',
+    'cam.torchAuto': 'Poca luz: linterna encendida',
+    'cam.lowLight': 'Poca luz: mantén el móvil quieto o usa la cámara de iOS con flash',
+    'crop.hint': 'Arrastra las esquinas o los bordes, o traza un marco nuevo en cualquier otro lugar.',
+    'review.retake': 'Repetir',
+    'review.keep': 'Aceptar',
+    'settings.reviewCrop': 'Revisar el marco tras la captura',
+    'settings.reviewCropHint': 'Ajusta el marco detectado después de cada foto antes de continuar.',
+    'settings.autoTorch': 'Encender la linterna automáticamente',
+    'settings.autoTorchHint': 'Enciende la linterna con poca luz (cámara integrada, si el dispositivo lo permite).',
     'install.title': 'Instalar como app',
     'install.ios': 'En Safari toca {share} <b>Compartir</b> (desde «•••» si hace falta) y luego <b>Añadir a pantalla de inicio</b>.',
     'install.prompt': 'Acceso rápido desde la pantalla de inicio, también sin conexión.',

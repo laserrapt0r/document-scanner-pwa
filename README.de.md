@@ -15,9 +15,13 @@ Sie läuft komplett im Browser und funktioniert offline. Alle Daten bleiben auf 
   - In-App-Kamera mit Serienaufnahme (mehrere Seiten hintereinander) und Taschenlampe, sofern das Gerät sie unterstützt
   - Alternativ die native iOS-Kamera (einstellbar)
   - Import von Bildern aus der Mediathek, auch mehrere auf einmal
-- **Automatische Randerkennung** mit Perspektivkorrektur
-- **Manuelles Zuschneiden** über vier Eckpunkte mit Lupe für präzises Setzen
-- **Filter:** Farbe (Original), Verbessert (gleicht Schatten aus, Papier wird weiß), Graustufen, Schwarz/Weiß
+- **Live-Rahmen** um das erkannte Dokument im Kamerabild
+- **Automatische Randerkennung**, robust auch bei schlechtem Licht (Rauschminderung, Konturanalyse, Kantenanpassung)
+- **Perspektivkorrektur mit echtem Seitenverhältnis**, damit Seiten nicht gestaucht oder gestreckt werden
+- **Automatisches Licht** bei Dunkelheit, sofern das Gerät es unterstützt, sonst ein Hinweis
+- **Rahmenprüfung nach jedem Foto:** erkannten Rahmen anpassen oder Foto neu aufnehmen
+- **Manuelles Zuschneiden:** Ecken oder ganze Kanten ziehen oder einen neuen Rahmen aufziehen; eine Lupe hilft beim präzisen Setzen
+- **Filter:** Farbe (Original), Verbessert (gleicht Schatten aus, Papier wird weiß), Graustufen, Schwarz/Weiß; mit Rauschminderung bei wenig Licht
 - **Helligkeit und Kontrast**, auf Wunsch für alle Seiten auf einmal
 - **Drehen** nach links und rechts
 - **Mehrseitige Dokumente:** Seiten hinzufügen, sortieren und löschen, zwischen Seiten wischen

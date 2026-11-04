@@ -6,7 +6,7 @@ import * as cam from './camera.js';
 import { icon } from './icons.js';
 import { t, tn, setLanguage, getLocale, applyTranslations, LANGUAGES } from './i18n.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -31,6 +31,8 @@ const DEFAULT_SETTINGS = {
   quality: 'medium',
   range: 'all',
   language: 'auto',
+  autoTorch: true,
+  reviewCrop: true,
 };
 const settings = { ...DEFAULT_SETTINGS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('scan-settings') || '{}')); } catch { /* ignore */ }
@@ -49,6 +51,8 @@ const state = {
   cropMode: false,
   crop: null,
   torch: false,
+  torchSupported: false,
+  review: null,     // 'app' | 'system' while reviewing a fresh capture
   exportFromEditor: false,
 };
 
@@ -181,7 +185,7 @@ async function makeThumb(page) {
 let persistRequested = false;
 
 // Process a new image and append it as a page to the current document.
-async function addImage(blob) {
+async function addImage(blob, hintCorners = null) {
   const doc = state.doc;
   if (!doc) throw new Error(t('err.noDoc'));
   const norm = await im.normalizeImage(blob);
@@ -201,8 +205,9 @@ async function addImage(blob) {
   };
   if (settings.autoDetect) {
     try {
-      const c = await im.detectCorners(page);
-      if (c) page.corners = c;
+      // Prefer detection on the full photo; fall back to the live-preview frame.
+      const c = (await im.detectCorners(page)) || hintCorners;
+      if (c) page.corners = c.map((p) => ({ ...p }));
     } catch (e) { console.warn('Randerkennung fehlgeschlagen', e); }
   }
   page.thumb = await makeThumb(page);
@@ -334,9 +339,9 @@ async function onGridClick(e) {
   openEditor(i);
 }
 
-async function deletePageAt(i) {
-  const p = state.pages[i];
-  if (!p || !confirm(t('confirm.deletePage', { n: i + 1 }))) return false;
+async function removePage(p) {
+  const i = state.pages.indexOf(p);
+  if (i < 0) return;
   clearTimeout(saveTimers.get(p.id));
   saveTimers.delete(p.id);
   state.pages.splice(i, 1);
@@ -344,6 +349,12 @@ async function deletePageAt(i) {
   await touchDoc();
   im.forgetSource(p.id);
   dropThumb('p:' + p.id);
+}
+
+async function deletePageAt(i) {
+  const p = state.pages[i];
+  if (!p || !confirm(t('confirm.deletePage', { n: i + 1 }))) return false;
+  await removePage(p);
   renderDoc();
   return true;
 }
@@ -542,6 +553,11 @@ async function deleteCurrentPage() {
 }
 
 // ------------------------------------------------------------------ Cropping
+//
+// Gestures on the crop canvas:
+//  - drag a corner handle      -> move that corner
+//  - drag an edge handle       -> move the whole edge
+//  - drag anywhere else        -> draw a new rectangular frame
 
 const CROP_M = 28; // margin around the image so handles are not clipped
 
@@ -549,7 +565,7 @@ async function enterCrop() {
   const page = curPage();
   if (!page) return;
   state.cropMode = true;
-  state.crop = { corners: page.corners.map((p) => ({ ...p })), src: null, active: null };
+  state.crop = { corners: page.corners.map((p) => ({ ...p })), src: null, drag: null };
   $('#view-editor').classList.add('cropping');
   setPane('crop');
   const s = await im.getSource(page, 1600, true);
@@ -620,15 +636,34 @@ function drawCrop() {
   ctx.closePath();
   ctx.fill('evenodd');
 
-  ctx.strokeStyle = '#3b82f6';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-  ctx.closePath();
-  ctx.stroke();
+  const dr = cr.drag;
+  ctx.lineJoin = 'round';
+  for (let k = 0; k < 4; k++) {
+    const a = pts[k], b = pts[(k + 1) % 4];
+    const active = dr?.mode === 'edge' && dr.k === k;
+    ctx.strokeStyle = active ? '#93c5fd' : '#3b82f6';
+    ctx.lineWidth = active ? 3.5 : 2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
 
+  // Edge handles (midpoints)
+  for (let k = 0; k < 4; k++) {
+    const a = pts[k], b = pts[(k + 1) % 4];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(-13, -4, 26, 8, 4) : ctx.rect(-13, -4, 26, 8);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Corner handles
   pts.forEach((p, i) => {
-    const active = cr.active === i;
+    const active = dr?.mode === 'corner' && dr.i === i;
     ctx.beginPath();
     ctx.arc(p.x, p.y, active ? 18 : 12, 0, Math.PI * 2);
     ctx.fillStyle = active ? 'rgba(59,130,246,0)' : 'rgba(59,130,246,.35)';
@@ -644,48 +679,84 @@ function cropPointer(e) {
   return { x: e.clientX - r.left - CROP_M, y: e.clientY - r.top - CROP_M };
 }
 
+function setCropCorner(i, px, py) {
+  const cr = state.crop;
+  const rot = curPage().rotation || 0;
+  cr.corners[i] = im.fromDisplay({ x: clamp(px, 0, cr.dw) / cr.dw, y: clamp(py, 0, cr.dh) / cr.dh }, rot);
+}
+
 function onCropDown(e) {
   const cr = state.crop;
   if (!cr?.src) return;
+  e.preventDefault();
   const { x, y } = cropPointer(e);
   const pts = cropDisplayPts();
-  let best = -1, bd = 48;
+  $('#crop-canvas').setPointerCapture(e.pointerId);
+
+  let best = -1, bd = 44;
   pts.forEach((p, i) => {
     const d = Math.hypot(p.x - x, p.y - y);
     if (d < bd) { bd = d; best = i; }
   });
-  if (best < 0) return;
-  e.preventDefault();
-  cr.active = best;
-  cr.off = { x: pts[best].x - x, y: pts[best].y - y };
-  $('#crop-canvas').setPointerCapture(e.pointerId);
-  moveHandle(x, y);
+  if (best >= 0) {
+    cr.drag = { mode: 'corner', i: best, off: { x: pts[best].x - x, y: pts[best].y - y } };
+    onCropMove(e);
+    return;
+  }
+  let edge = -1;
+  bd = 36;
+  for (let k = 0; k < 4; k++) {
+    const a = pts[k], b = pts[(k + 1) % 4];
+    const d = Math.hypot((a.x + b.x) / 2 - x, (a.y + b.y) / 2 - y);
+    if (d < bd) { bd = d; edge = k; }
+  }
+  if (edge >= 0) {
+    cr.drag = { mode: 'edge', k: edge, start: { x, y }, a: pts[edge], b: pts[(edge + 1) % 4] };
+    drawCrop();
+    return;
+  }
+  cr.drag = { mode: 'draw', anchor: { x: clamp(x, 0, cr.dw), y: clamp(y, 0, cr.dh) }, started: false };
 }
 
 function onCropMove(e) {
   const cr = state.crop;
-  if (!cr || cr.active === null) return;
+  const dr = cr?.drag;
+  if (!dr) return;
   e.preventDefault();
   const { x, y } = cropPointer(e);
-  moveHandle(x, y);
+  const rot = curPage().rotation || 0;
+
+  if (dr.mode === 'corner') {
+    const px = clamp(x + dr.off.x, 0, cr.dw), py = clamp(y + dr.off.y, 0, cr.dh);
+    setCropCorner(dr.i, px, py);
+    drawCrop();
+    drawLoupe(px, py);
+  } else if (dr.mode === 'edge') {
+    const dx = clamp(x - dr.start.x, -Math.min(dr.a.x, dr.b.x), cr.dw - Math.max(dr.a.x, dr.b.x));
+    const dy = clamp(y - dr.start.y, -Math.min(dr.a.y, dr.b.y), cr.dh - Math.max(dr.a.y, dr.b.y));
+    setCropCorner(dr.k, dr.a.x + dx, dr.a.y + dy);
+    setCropCorner((dr.k + 1) % 4, dr.b.x + dx, dr.b.y + dy);
+    drawCrop();
+    drawLoupe((dr.a.x + dr.b.x) / 2 + dx, (dr.a.y + dr.b.y) / 2 + dy);
+  } else {
+    const cx = clamp(x, 0, cr.dw), cy = clamp(y, 0, cr.dh);
+    if (!dr.started && Math.hypot(cx - dr.anchor.x, cy - dr.anchor.y) < 12) return;
+    dr.started = true;
+    const x0 = Math.min(dr.anchor.x, cx), x1 = Math.max(dr.anchor.x, cx);
+    const y0 = Math.min(dr.anchor.y, cy), y1 = Math.max(dr.anchor.y, cy);
+    const disp = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+    cr.corners = im.orderCorners(disp.map((p) => im.fromDisplay({ x: p.x / cr.dw, y: p.y / cr.dh }, rot)));
+    drawCrop();
+    drawLoupe(cx, cy);
+  }
 }
 
 function onCropUp() {
   const cr = state.crop;
   if (!cr) return;
-  cr.active = null;
+  cr.drag = null;
   $('#loupe').hidden = true;
   drawCrop();
-}
-
-function moveHandle(x, y) {
-  const cr = state.crop;
-  const rot = curPage().rotation || 0;
-  const px = clamp(x + cr.off.x, 0, cr.dw);
-  const py = clamp(y + cr.off.y, 0, cr.dh);
-  cr.corners[cr.active] = im.fromDisplay({ x: px / cr.dw, y: py / cr.dh }, rot);
-  drawCrop();
-  drawLoupe(px, py);
 }
 
 // Loupe shows the area under the finger magnified.
@@ -719,10 +790,17 @@ function drawLoupe(px, py) {
   lc.style.right = leftSide ? '12px' : '';
 }
 
+function croppedCornersOrToast() {
+  const c = im.orderCorners(state.crop.corners);
+  if (im.quadArea(c) < 0.01) { toast(t('crop.tooSmall')); return null; }
+  if (!im.isConvex(c)) { toast(t('crop.invalid')); return null; }
+  return c;
+}
+
 async function applyCrop() {
   const p = curPage();
-  const c = im.orderCorners(state.crop.corners);
-  if (im.quadArea(c) < 0.01) { toast(t('crop.tooSmall')); return; }
+  const c = croppedCornersOrToast();
+  if (!c) return;
   p.corners = c;
   exitCrop();
   pageChanged(p);
@@ -736,6 +814,65 @@ async function autoCrop() {
   if (!c) { toast(t('crop.notFound')); return; }
   state.crop.corners = c;
   drawCrop();
+}
+
+// ------------------------------------------------------------------ Review after capture
+// After each photo the detected frame is shown for adjustment ("Keep" / "Retake").
+// source: 'app' (in-app camera) or 'system' (iOS camera via file input).
+
+async function openReview(page, source) {
+  state.review = source;
+  state.index = Math.max(0, state.pages.indexOf(page));
+  stopLive();
+  showView('editor');
+  $('#view-editor').classList.add('reviewing');
+  await enterCrop();
+}
+
+function endReview() {
+  state.review = null;
+  $('#view-editor').classList.remove('reviewing');
+  exitCrop();
+}
+
+async function reviewKeep() {
+  const p = curPage();
+  const c = croppedCornersOrToast();
+  if (!c) return;
+  p.corners = c;
+  const source = state.review;
+  endReview();
+  busy(t('busy.processing'));
+  try { await persistPage(p); } finally { busy(false); }
+  if (source === 'app') returnToCamera(p);
+  else await finishAddFlow();
+}
+
+async function reviewRetake() {
+  const source = state.review;
+  const p = curPage();
+  if (source === 'system') {
+    // Must happen synchronously inside the click handler.
+    captureTarget = 'current';
+    $('#file-capture').click();
+  }
+  endReview();
+  await removePage(p);
+  if (source === 'app') {
+    camCount = Math.max(0, camCount - 1);
+    returnToCamera(camCount ? state.pages[state.pages.length - 1] : null);
+  } else {
+    renderDoc();
+    showView('doc');
+  }
+}
+
+function returnToCamera(lastPage) {
+  showView('camera');
+  updateCamUi(lastPage);
+  $('#cam-video').play().catch(() => {});
+  if (cam.isActive()) startLive();
+  else startStream();
 }
 
 // ------------------------------------------------------------------ Camera
@@ -765,9 +902,15 @@ async function startAppCamera(target) {
 async function startStream() {
   try {
     const info = await cam.start($('#cam-video'));
+    state.torchSupported = info.torch;
     $('#cam-torch').hidden = !info.torch;
     $('#cam-torch').classList.remove('on');
     state.torch = false;
+    torchManual = false;
+    lightHandled = false;
+    darkCount = 0;
+    $('#cam-hint').textContent = t('cam.hint');
+    startLive();
   } catch (e) {
     console.error(e);
     const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
@@ -779,13 +922,114 @@ async function startStream() {
 function updateCamUi(page) {
   $('#cam-count').textContent = camCount;
   $('#cam-count').hidden = camCount === 0;
+  const img = $('#cam-thumb-img');
   if (page?.thumb) {
-    const img = $('#cam-thumb-img');
     img.src = thumbUrl('p:' + page.id, page.thumb);
     img.hidden = false;
   } else if (!camCount) {
-    $('#cam-thumb-img').hidden = true;
+    img.hidden = true;
   }
+}
+
+// ---- Live document frame + light measurement (runs ~7×/s on a small copy of the video frame)
+
+let liveTimer = null;
+let liveQuad = null;
+let liveMiss = 0;
+const liveCanvas = document.createElement('canvas');
+
+function startLive() {
+  stopLive();
+  liveTimer = setTimeout(liveTick, 250);
+}
+
+function stopLive() {
+  clearTimeout(liveTimer);
+  liveTimer = null;
+  liveQuad = null;
+  liveMiss = 0;
+  drawOverlay();
+}
+
+function liveTick() {
+  liveTimer = null;
+  if (state.view !== 'camera' || !cam.isActive()) return;
+  const v = $('#cam-video');
+  const vw = v.videoWidth, vh = v.videoHeight;
+  if (vw && vh) {
+    const s = 320 / Math.max(vw, vh);
+    const w = Math.round(vw * s), h = Math.round(vh * s);
+    if (liveCanvas.width !== w || liveCanvas.height !== h) { liveCanvas.width = w; liveCanvas.height = h; }
+    const ctx = liveCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(v, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h);
+    handleLight(im.meanLuminance(data));
+    const res = im.detectQuad(data);
+    if (res) {
+      liveMiss = 0;
+      // Smooth movement to avoid jitter.
+      liveQuad = liveQuad
+        ? liveQuad.map((p, i) => ({ x: p.x + (res.corners[i].x - p.x) * 0.5, y: p.y + (res.corners[i].y - p.y) * 0.5 }))
+        : res.corners;
+    } else if (++liveMiss > 3) {
+      liveQuad = null;
+    }
+    drawOverlay();
+  }
+  liveTimer = setTimeout(liveTick, 140);
+}
+
+function drawOverlay() {
+  const c = $('#cam-overlay');
+  const v = $('#cam-video');
+  const cw = c.clientWidth, ch = c.clientHeight;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  if (c.width !== Math.round(cw * dpr) || c.height !== Math.round(ch * dpr)) {
+    c.width = Math.round(cw * dpr);
+    c.height = Math.round(ch * dpr);
+  }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, c.width, c.height);
+  if (!liveQuad || !v.videoWidth) return;
+  // The video uses object-fit: contain – map frame coordinates into the displayed area.
+  const s = Math.min(cw / v.videoWidth, ch / v.videoHeight);
+  const dw = v.videoWidth * s, dh = v.videoHeight * s;
+  const ox = (cw - dw) / 2, oy = (ch - dh) / 2;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pts = liveQuad.map((p) => [ox + p.x * dw, oy + p.y * dh]);
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(59,130,246,.18)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#3b82f6';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); }
+}
+
+// Automatic torch: if the picture stays dark for a moment, switch the torch on (once per session,
+// and never after the user has toggled it manually). Without torch support, show a hint instead.
+let darkCount = 0;
+let torchManual = false;
+let lightHandled = false;
+const DARK_LUMINANCE = 75;
+
+async function handleLight(lum) {
+  if (lightHandled || torchManual || state.torch) return;
+  darkCount = lum < DARK_LUMINANCE ? darkCount + 1 : 0;
+  if (darkCount < 5) return;
+  lightHandled = true;
+  if (state.torchSupported && settings.autoTorch && await cam.setTorch(true)) {
+    state.torch = true;
+    $('#cam-torch').classList.add('on');
+    toast(t('cam.torchAuto'));
+    return;
+  }
+  $('#cam-hint').textContent = t('cam.lowLight');
 }
 
 let capturing = false;
@@ -798,13 +1042,24 @@ async function capture() {
   f.classList.add('go');
   try {
     const blob = await cam.grab($('#cam-video'));
+    const hint = liveQuad ? liveQuad.map((p) => ({ ...p })) : null;
     camCount++;
     updateCamUi(null);
-    enqueue(async () => {
-      const page = await addImage(blob);
-      updateCamUi(page);
-    });
+    if (settings.reviewCrop) {
+      stopLive();
+      busy(t('busy.processing'));
+      const page = await enqueue(() => addImage(blob, hint));
+      busy(false);
+      if (page) await openReview(page, 'app');
+      else { camCount--; updateCamUi(null); startLive(); }
+    } else {
+      enqueue(async () => {
+        const page = await addImage(blob, hint);
+        updateCamUi(page);
+      });
+    }
   } catch (e) {
+    busy(false);
     toast(e.message || t('cam.captureFailed'));
   } finally {
     capturing = false;
@@ -812,6 +1067,7 @@ async function capture() {
 }
 
 async function closeCamera() {
+  stopLive();
   cam.stop();
   busy(t('busy.captures'));
   await queue;
@@ -952,6 +1208,8 @@ function syncSegs() {
 
 async function openSettings() {
   $('#set-autodetect').checked = settings.autoDetect;
+  $('#set-autotorch').checked = settings.autoTorch;
+  $('#set-review').checked = settings.reviewCrop;
   $('#app-version').textContent = APP_VERSION;
   $('#storage-info').textContent = '';
   openSheet('sheet-settings');
@@ -995,10 +1253,15 @@ function bindEvents() {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     if (!files.length) return;
+    stopLive();
     cam.stop();
     if (captureTarget === 'new' || !state.doc) await startNewDoc();
     await importFiles(files);
-    await finishAddFlow();
+    if (settings.reviewCrop && files.length === 1 && state.pages.length) {
+      await openReview(state.pages[state.pages.length - 1], 'system');
+    } else {
+      await finishAddFlow();
+    }
   });
 
   // Editor
@@ -1072,9 +1335,12 @@ function bindEvents() {
   $('#crop-apply').onclick = applyCrop;
   $('#crop-cancel').onclick = exitCrop;
   $('#crop-auto').onclick = autoCrop;
+  $('#review-keep').onclick = reviewKeep;
+  $('#review-retake').onclick = reviewRetake;
   $('#crop-full').onclick = () => { state.crop.corners = im.FULL.map((p) => ({ ...p })); drawCrop(); };
   window.addEventListener('resize', () => {
     if (state.cropMode) { layoutCrop(); drawCrop(); }
+    if (state.view === 'camera') drawOverlay();
   });
 
   // Camera
@@ -1084,6 +1350,7 @@ function bindEvents() {
   $('#cam-thumb').onclick = () => { if (camCount) closeCamera(); };
   $('#cam-system').onclick = () => { captureTarget = 'current'; $('#file-capture').click(); };
   $('#cam-torch').onclick = async () => {
+    torchManual = true;
     state.torch = !state.torch;
     const ok = await cam.setTorch(state.torch);
     if (!ok) state.torch = false;
@@ -1091,8 +1358,7 @@ function bindEvents() {
   };
   document.addEventListener('visibilitychange', () => {
     if (state.view !== 'camera') return;
-    if (document.hidden) cam.stop();
-    else if (!cam.isActive()) startStream();
+    if (document.hidden) { stopLive(); cam.stop(); } else if (!cam.isActive()) startStream();
   });
 
   // Sheets
@@ -1102,6 +1368,8 @@ function bindEvents() {
   $('#export-share').onclick = shareExport;
   $('#export-download').onclick = downloadExport;
   $('#set-autodetect').onchange = (e) => { settings.autoDetect = e.target.checked; saveSettings(); };
+  $('#set-autotorch').onchange = (e) => { settings.autoTorch = e.target.checked; saveSettings(); };
+  $('#set-review').onchange = (e) => { settings.reviewCrop = e.target.checked; saveSettings(); };
   $('#set-lang').onchange = (e) => { settings.language = e.target.value; saveSettings(); applyLanguage(); };
 }
 

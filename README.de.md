@@ -16,6 +16,7 @@ Sie läuft komplett im Browser und funktioniert offline. Alle Daten bleiben auf 
   - Alternativ die native iOS-Kamera (einstellbar)
   - Import von Bildern aus der Mediathek, auch mehrere auf einmal
 - **Live-Rahmen** um das erkannte Dokument im Kamerabild
+- **Verwacklungsschutz:** Nach dem Auslösen wartet die App, bis das Handy ruhig ist, und nimmt das schärfste Bild (kürzere Belichtung, wo der Browser es erlaubt)
 - **Automatische Randerkennung**, robust auch bei schlechtem Licht (Rauschminderung, Konturanalyse, Kantenanpassung)
 - **Perspektivkorrektur mit echtem Seitenverhältnis**, damit Seiten nicht gestaucht oder gestreckt werden
 - **Automatisches Licht** bei Dunkelheit, sofern das Gerät es unterstützt, sonst ein Hinweis
@@ -60,7 +61,7 @@ python3 -m http.server 8080
 
 **Auf GitHub Pages veröffentlichen:** unter *Settings → Pages* die Option *Deploy from a branch* wählen, dann Branch `main` und Ordner `/ (root)`. Alle Pfade sind relativ, die App läuft also in jedem Unterverzeichnis.
 
-**Updates ausrollen:** nach Änderungen in `sw.js` die Konstante `VERSION` erhöhen (z. B. `v1.1.1`). Installierte Apps zeigen dann den Hinweis **Neue Version verfügbar → Aktualisieren**.
+**Updates ausrollen:** nach Änderungen in `sw.js` die Konstante `VERSION` und in `js/app.js` die Konstante `APP_VERSION` erhöhen. Installierte Apps suchen beim Start, beim Zurückholen in den Vordergrund und alle 30 Minuten nach Updates. Sie aktualisieren sich automatisch im nächsten sicheren Moment (nicht während des Scannens oder Bearbeitens) und zeigen einen kurzen Hinweis.
 
 **Sprache hinzufügen:** in [`js/i18n.js`](js/i18n.js) einen Eintrag in `LANGUAGES` und ein Wörterbuch in `DICT` ergänzen. Fehlende Schlüssel fallen auf Englisch zurück.
 

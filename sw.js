@@ -1,6 +1,6 @@
 // Service worker: keeps the app available offline.
 // Bump VERSION whenever the app changes so users receive the new version.
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const CACHE = 'scan-app-' + VERSION;
 
 const ASSETS = [
@@ -31,7 +31,9 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('scan-app-') && k !== CACHE).map((k) => caches.delete(k)))),
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('scan-app-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
   );
 });
 

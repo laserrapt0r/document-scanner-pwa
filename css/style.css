@@ -359,12 +359,16 @@ button:disabled { opacity: .4; cursor: default; }
 }
 .cam-bottom .btn { justify-self: end; }
 .shutter {
-  width: 76px; height: 76px; border-radius: 50%;
-  border: 5px solid #fff; background: rgba(255, 255, 255, .25);
-  padding: 0;
-  transition: transform .1s;
+  width: 78px; height: 78px; border-radius: 50%;
+  border: 4px solid #fff; padding: 0;
+  background: #ef4444;
+  box-shadow: inset 0 0 0 4px #000;
+  transition: transform .1s, background .15s;
 }
-.shutter:active { transform: scale(.92); background: rgba(255, 255, 255, .6); }
+.shutter:active { transform: scale(.92); background: #dc2626; }
+/* Waiting for the phone to be steady: pulsing ring */
+.shutter.arming { background: #b91c1c; animation: arming .6s ease-in-out infinite alternate; }
+@keyframes arming { from { box-shadow: inset 0 0 0 4px #000; } to { box-shadow: inset 0 0 0 12px #000; } }
 .cam-thumb {
   justify-self: start;
   position: relative;

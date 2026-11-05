@@ -6,7 +6,7 @@ import * as cam from './camera.js';
 import { icon } from './icons.js';
 import { t, tn, setLanguage, getLocale, applyTranslations, LANGUAGES } from './i18n.js';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS = {
   language: 'auto',
   autoTorch: true,
   reviewCrop: true,
+  stabilize: true,
 };
 const settings = { ...DEFAULT_SETTINGS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('scan-settings') || '{}')); } catch { /* ignore */ }
@@ -114,6 +115,7 @@ function showView(name) {
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + name));
   state.view = name;
   document.body.dataset.view = name;
+  if (name === 'home' || name === 'doc') setTimeout(tryApplyUpdate, 300);
 }
 
 function openSheet(id) {
@@ -126,6 +128,7 @@ function closeSheet(id) {
   s.classList.remove('open');
   setTimeout(() => { if (!s.classList.contains('open')) s.hidden = true; }, 260);
   if (id === 'sheet-export') exportToken++;
+  setTimeout(tryApplyUpdate, 400);
 }
 
 // Manage (and release) object URLs for thumbnails.
@@ -1032,17 +1035,105 @@ async function handleLight(lum) {
   $('#cam-hint').textContent = t('cam.lowLight');
 }
 
+// ---- Anti-shake capture
+// Pressing the button shakes the phone. So after the press we wait a moment, then watch the
+// video: each frame is rated for sharpness (variance of the Laplacian) and movement (difference
+// to the previous frame). The sharpest frame is kept; as soon as the phone is steady, or after
+// a maximum wait, that frame is used.
+
+const STEADY = { minWait: 350, maxWait: 1600, motion: 3, steadyFrames: 3 };
+const anaCanvas = document.createElement('canvas');
+const fullCanvas = document.createElement('canvas');
+
+function analyzeFrame(video) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const s = 360 / Math.max(vw, vh);
+  const w = Math.round(vw * s), h = Math.round(vh * s);
+  if (anaCanvas.width !== w || anaCanvas.height !== h) { anaCanvas.width = w; anaCanvas.height = h; }
+  const ctx = anaCanvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let p = 0, i = 0; p < g.length; p++, i += 4) g[p] = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+  // Sharpness on the central 70 % of the frame
+  let sum = 0, sum2 = 0, n = 0;
+  const x0 = Math.round(w * 0.15), x1 = Math.round(w * 0.85), y0 = Math.round(h * 0.15), y1 = Math.round(h * 0.85);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const p = y * w + x;
+      const l = 4 * g[p] - g[p - 1] - g[p + 1] - g[p - w] - g[p + w];
+      sum += l; sum2 += l * l; n++;
+    }
+  }
+  const sharp = sum2 / n - (sum / n) ** 2;
+  // Coarse 48-px thumbnail for motion detection
+  const tw = 48, th = Math.max(1, Math.round((48 * h) / w));
+  const thumb = new Float32Array(tw * th);
+  for (let ty = 0; ty < th; ty++) {
+    for (let tx = 0; tx < tw; tx++) thumb[ty * tw + tx] = g[Math.floor((ty + 0.5) * h / th) * w + Math.floor((tx + 0.5) * w / tw)];
+  }
+  return { sharp, thumb };
+}
+
+async function captureSteady(video) {
+  const t0 = performance.now();
+  let bestSharp = -1, prev = null, steady = 0, have = false;
+  const keep = () => {
+    if (fullCanvas.width !== video.videoWidth || fullCanvas.height !== video.videoHeight) {
+      fullCanvas.width = video.videoWidth;
+      fullCanvas.height = video.videoHeight;
+    }
+    fullCanvas.getContext('2d').drawImage(video, 0, 0);
+    have = true;
+  };
+  await cam.shortenExposure();
+  try {
+    for (;;) {
+      await cam.nextFrame(video);
+      const el = performance.now() - t0;
+      const { sharp, thumb } = analyzeFrame(video);
+      let motion = Infinity;
+      if (prev) {
+        motion = 0;
+        for (let i = 0; i < thumb.length; i++) motion += Math.abs(thumb[i] - prev[i]);
+        motion /= thumb.length;
+      }
+      prev = thumb;
+      if (el < STEADY.minWait) continue;
+      if (sharp > bestSharp) { bestSharp = sharp; keep(); }
+      steady = motion < STEADY.motion ? steady + 1 : 0;
+      if (steady >= STEADY.steadyFrames || el > STEADY.maxWait) break;
+    }
+  } finally {
+    cam.restoreExposure();
+  }
+  if (!have) keep();
+  const blob = await im.toBlob(fullCanvas, 'image/jpeg', 0.92);
+  return blob;
+}
+
 let capturing = false;
 async function capture() {
   if (capturing) return;
   capturing = true;
-  const f = $('#cam-flash');
-  f.classList.remove('go');
-  void f.offsetWidth;
-  f.classList.add('go');
+  const shutter = $('#cam-shutter');
+  const hint = liveQuad ? liveQuad.map((p) => ({ ...p })) : null;
   try {
-    const blob = await cam.grab($('#cam-video'));
-    const hint = liveQuad ? liveQuad.map((p) => ({ ...p })) : null;
+    let blob;
+    if (settings.stabilize) {
+      shutter.classList.add('arming');
+      $('#cam-hint').textContent = t('cam.holdStill');
+      try { blob = await captureSteady($('#cam-video')); } finally {
+        shutter.classList.remove('arming');
+        $('#cam-hint').textContent = t('cam.hint');
+      }
+    } else {
+      blob = await cam.grab($('#cam-video'));
+    }
+    const f = $('#cam-flash');
+    f.classList.remove('go');
+    void f.offsetWidth;
+    f.classList.add('go');
     camCount++;
     updateCamUi(null);
     if (settings.reviewCrop) {
@@ -1210,6 +1301,7 @@ async function openSettings() {
   $('#set-autodetect').checked = settings.autoDetect;
   $('#set-autotorch').checked = settings.autoTorch;
   $('#set-review').checked = settings.reviewCrop;
+  $('#set-stabilize').checked = settings.stabilize;
   $('#app-version').textContent = APP_VERSION;
   $('#storage-info').textContent = '';
   openSheet('sheet-settings');
@@ -1370,36 +1462,60 @@ function bindEvents() {
   $('#set-autodetect').onchange = (e) => { settings.autoDetect = e.target.checked; saveSettings(); };
   $('#set-autotorch').onchange = (e) => { settings.autoTorch = e.target.checked; saveSettings(); };
   $('#set-review').onchange = (e) => { settings.reviewCrop = e.target.checked; saveSettings(); };
+  $('#set-stabilize').onchange = (e) => { settings.stabilize = e.target.checked; saveSettings(); };
   $('#set-lang').onchange = (e) => { settings.language = e.target.value; saveSettings(); applyLanguage(); };
 }
 
 // ------------------------------------------------------------------ Service Worker
 
+// New versions are installed in the background and activated automatically – but only at a
+// safe moment (start/document view, no dialog open, nothing being processed), so a scan or an
+// edit in progress is never interrupted. After the reload a short notice is shown.
+
+let pendingWorker = null;
+let reloading = false;
+
+function safeToUpdate() {
+  return (state.view === 'home' || state.view === 'doc') &&
+    !$$('.sheet-backdrop').some((b) => !b.hidden) &&
+    $('#busy').hidden && !capturing && !state.review;
+}
+
+async function tryApplyUpdate() {
+  if (!pendingWorker || reloading || !safeToUpdate()) return;
+  reloading = true;
+  try { await flushSaves(); } catch { /* ignore */ }
+  try { sessionStorage.setItem('app-updated', '1'); } catch { /* ignore */ }
+  pendingWorker.postMessage('skipWaiting');
+}
+
 function registerSW() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('./sw.js').then((reg) => {
-    const notify = (w) => {
-      toast(t('update.available'), { action: t('update.action'), onAction: () => w.postMessage('skipWaiting') });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+    const found = (w) => {
+      if (!navigator.serviceWorker.controller) return; // first install – nothing to update
+      pendingWorker = w;
+      tryApplyUpdate();
     };
-    if (reg.waiting && navigator.serviceWorker.controller) notify(reg.waiting);
+    if (reg.waiting) found(reg.waiting);
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
-      w?.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) notify(w);
-      });
+      w?.addEventListener('statechange', () => { if (w.state === 'installed') found(w); });
     });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
-  }).catch((e) => console.warn('Service Worker nicht registriert', e));
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      check();
+      tryApplyUpdate();
+    });
+    setInterval(check, 30 * 60 * 1000);
+  }).catch((e) => console.warn('Service worker not registered', e));
 
-  let reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloaded) return;
-    reloaded = true;
+    if (!reloading) return;
     location.reload();
   });
 }
-
-// ------------------------------------------------------------------ Startup
 
 // ------------------------------------------------------------------ Install banner
 // iOS has no API to trigger the "Add to Home Screen" dialog, so we show instructions there.
@@ -1508,6 +1624,12 @@ async function init() {
     toast(t('err.storage', { msg: e.message }), { duration: 8000 });
   }
   registerSW();
+  try {
+    if (sessionStorage.getItem('app-updated')) {
+      sessionStorage.removeItem('app-updated');
+      toast(t('update.done', { v: APP_VERSION }));
+    }
+  } catch { /* ignore */ }
 }
 
 init();

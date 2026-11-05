@@ -10,6 +10,10 @@ export const LANGUAGES = [
 
 const DICT = {
   en: {
+    'cam.holdStill': 'Hold still…',
+    'settings.stabilize': 'Anti-shake',
+    'settings.stabilizeHint': 'Waits briefly after pressing until the phone is steady and keeps the sharpest frame.',
+    'update.done': 'App updated to version {v}',
     'crop.invalid': 'The frame is twisted – please move the corners so that they form a rectangle.',
     'cam.torchAuto': 'Low light – torch switched on',
     'cam.lowLight': 'Low light – hold steady or use the iOS camera with flash',
@@ -143,6 +147,10 @@ const DICT = {
   },
 
   de: {
+    'cam.holdStill': 'Ruhig halten…',
+    'settings.stabilize': 'Verwacklungsschutz',
+    'settings.stabilizeHint': 'Wartet nach dem Drücken kurz, bis das Handy ruhig ist, und nimmt das schärfste Bild.',
+    'update.done': 'App auf Version {v} aktualisiert',
     'crop.invalid': 'Der Rahmen ist verdreht – bitte die Ecken so ziehen, dass ein Viereck entsteht.',
     'cam.torchAuto': 'Wenig Licht – Taschenlampe eingeschaltet',
     'cam.lowLight': 'Wenig Licht – ruhig halten oder iOS-Kamera mit Blitz nutzen',
@@ -276,6 +284,10 @@ const DICT = {
   },
 
   fr: {
+    'cam.holdStill': 'Ne bougez plus…',
+    'settings.stabilize': 'Anti-flou',
+    'settings.stabilizeHint': 'Attend brièvement que le téléphone soit stable et garde l’image la plus nette.',
+    'update.done': 'App mise à jour vers la version {v}',
     'crop.invalid': 'Le cadre est croisé – déplacez les coins pour former un quadrilatère.',
     'cam.torchAuto': 'Peu de lumière – lampe allumée',
     'cam.lowLight': 'Peu de lumière – restez stable ou utilisez l’appareil photo iOS avec flash',
@@ -409,6 +421,10 @@ const DICT = {
   },
 
   es: {
+    'cam.holdStill': 'No te muevas…',
+    'settings.stabilize': 'Antivibración',
+    'settings.stabilizeHint': 'Espera un momento tras pulsar hasta que el móvil esté quieto y guarda la imagen más nítida.',
+    'update.done': 'App actualizada a la versión {v}',
     'crop.invalid': 'El marco está cruzado: mueve las esquinas para que formen un cuadrilátero.',
     'cam.torchAuto': 'Poca luz: linterna encendida',
     'cam.lowLight': 'Poca luz: mantén el móvil quieto o usa la cámara de iOS con flash',

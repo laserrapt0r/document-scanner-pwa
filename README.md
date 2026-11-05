@@ -16,6 +16,7 @@ It runs entirely in the browser and works offline. All data stays on your device
   - Alternatively the native iOS camera (configurable)
   - Import images from the photo library, including several at once
 - **Live document frame** in the camera view
+- **Anti-shake capture:** after pressing the shutter the app waits until the phone is steady and keeps the sharpest frame (shorter exposure where the browser allows it)
 - **Automatic edge detection**, robust in low light (denoising, contour analysis, line fitting)
 - **Perspective correction with the true aspect ratio**, so pages are not squashed or stretched
 - **Automatic torch** in low light, where the device supports it, otherwise a hint
@@ -60,7 +61,7 @@ python3 -m http.server 8080
 
 **Deploying on GitHub Pages:** go to *Settings → Pages* and choose *Deploy from a branch*, then branch `main` and folder `/ (root)`. All paths are relative, so the app works in any sub-directory.
 
-**Releasing updates:** after changing files, increase `VERSION` in `sw.js` (e.g. `v1.1.1`). Installed apps then show a **New version available → Update** notice.
+**Releasing updates:** after changing files, increase `VERSION` in `sw.js` and `APP_VERSION` in `js/app.js`. Installed apps check for updates on start, when brought to the foreground and every 30 minutes. They update automatically at the next safe moment (not while scanning or editing) and show a short notice.
 
 **Adding a language:** add an entry to `LANGUAGES` and a dictionary to `DICT` in [`js/i18n.js`](js/i18n.js). Missing keys fall back to English.
 

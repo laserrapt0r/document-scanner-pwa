@@ -64,6 +64,44 @@ export async function setTorch(on) {
   }
 }
 
+// Shorter exposure against camera shake – only where the browser exposes manual exposure
+// (e.g. Chrome on Android; iOS Safari currently does not). ISO is raised by the same factor,
+// so the picture does not get darker. exposureTime is given in 100 µs units.
+let exposureChanged = false;
+export async function shortenExposure(maxSeconds = 1 / 125) {
+  if (!track?.getCapabilities) return false;
+  try {
+    const caps = track.getCapabilities();
+    const s = track.getSettings();
+    if (!caps.exposureTime || !caps.iso || !caps.exposureMode?.includes('manual')) return false;
+    if (!s.exposureTime || !s.iso) return false;
+    const target = maxSeconds * 10000;
+    if (s.exposureTime <= target) return false;
+    const product = s.exposureTime * s.iso; // keep brightness constant
+    const exposureTime = Math.max(target, product / caps.iso.max, caps.exposureTime.min);
+    const iso = Math.min(caps.iso.max, product / exposureTime);
+    await track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime, iso }] });
+    exposureChanged = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function restoreExposure() {
+  if (!exposureChanged || !track) return;
+  exposureChanged = false;
+  try { await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }); } catch { /* ignore */ }
+}
+
+// Resolves when the next video frame is available.
+export function nextFrame(video) {
+  return new Promise((resolve) => {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => resolve());
+    else setTimeout(resolve, 40);
+  });
+}
+
 export async function grab(video) {
   const w = video.videoWidth, h = video.videoHeight;
   if (!w || !h) throw new Error(t('cam.notReady'));
